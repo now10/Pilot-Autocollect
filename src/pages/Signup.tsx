@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { motion } from 'framer-motion';
 import { ArrowRight, Zap } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 const Signup = () => {
   const { signup } = useAuth();
@@ -16,10 +17,17 @@ const Signup = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.country) {
+      toast.error('Please select a country');
+      return;
+    }
     setLoading(true);
     try {
       await signup(form.email, form.password, form.businessName, form.country);
+      toast.success('Account created!', { description: 'Welcome to AutoCollect.' });
       navigate('/dashboard');
+    } catch (err: any) {
+      toast.error('Signup failed', { description: err.message });
     } finally {
       setLoading(false);
     }
@@ -62,7 +70,7 @@ const Signup = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="••••••••" required className="bg-muted border-border" />
+              <Input id="password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="••••••••" required minLength={6} className="bg-muted border-border" />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Creating account...' : 'Create account'}
