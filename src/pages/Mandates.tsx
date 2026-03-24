@@ -1,7 +1,11 @@
-import { mockMandates, mockCustomers } from '@/data/mock';
+import { useState } from 'react';
+import { useMandates, useCustomers, useCreateMandate } from '@/hooks/useBusinessData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, ExternalLink } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Plus, ExternalLink, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -13,9 +17,28 @@ const statusColors: Record<string, string> = {
 };
 
 const MandatesPage = () => {
-  const handleCreate = () => {
-    toast.info('GoCardless redirect flow would start here', { description: 'In production, the customer would be redirected to authorize the SEPA mandate.' });
+  const { data: mandates, isLoading } = useMandates();
+  const { data: customers } = useCustomers();
+  const createMandate = useCreateMandate();
+  const [open, setOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState('');
+
+  const handleCreate = async () => {
+    if (!selectedCustomer) {
+      toast.error('Select a customer');
+      return;
+    }
+    try {
+      await createMandate.mutateAsync({ customer_id: selectedCustomer });
+      toast.info('Mandate created', { description: 'In production, the customer would be redirected to authorize the SEPA mandate via GoCardless.' });
+      setOpen(false);
+      setSelectedCustomer('');
+    } catch (err: any) {
+      toast.error('Failed', { description: err.message });
+    }
   };
+
+  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
 
   return (
     <div className="space-y-6">
@@ -24,29 +47,58 @@ const MandatesPage = () => {
           <h1 className="text-2xl font-bold text-foreground">Mandates</h1>
           <p className="text-sm text-muted-foreground mt-1">SEPA Direct Debit mandates</p>
         </div>
-        <Button size="sm" onClick={handleCreate}><Plus className="w-4 h-4 mr-2" />Create Mandate</Button>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm"><Plus className="w-4 h-4 mr-2" />Create Mandate</Button>
+          </DialogTrigger>
+          <DialogContent className="glass-card border-border">
+            <DialogHeader><DialogTitle>Create SEPA Mandate</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Customer</Label>
+                <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
+                  <SelectTrigger className="bg-muted border-border"><SelectValue placeholder="Select customer" /></SelectTrigger>
+                  <SelectContent>
+                    {(customers ?? []).map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name} – {c.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {/* TODO: Replace with GoCardless redirect flow */}
+                In production, this will redirect the customer to GoCardless to authorize the SEPA mandate.
+                <br />API: POST https://api.gocardless.com/redirect_flows
+              </p>
+              <Button className="w-full" onClick={handleCreate} disabled={createMandate.isPending}>
+                {createMandate.isPending ? 'Creating...' : 'Create Mandate'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      <div className="space-y-2">
-        {mockMandates.map((mandate, i) => {
-          const customer = mockCustomers.find(c => c.id === mandate.customer_id);
-          return (
+      {(mandates ?? []).length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No mandates yet. Create one by selecting a customer.</p>
+      ) : (
+        <div className="space-y-2">
+          {(mandates ?? []).map((mandate: any, i: number) => (
             <motion.div key={mandate.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-card rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <p className="text-sm font-medium text-foreground">{customer?.name ?? 'Unknown'}</p>
-                  <Badge className={statusColors[mandate.status]}>{mandate.status}</Badge>
+                  <p className="text-sm font-medium text-foreground">{mandate.customers?.name ?? 'Unknown'}</p>
+                  <Badge className={statusColors[mandate.status] ?? ''}>{mandate.status}</Badge>
                 </div>
-                <p className="text-xs text-muted-foreground font-mono">{mandate.gocardless_id}</p>
-                <p className="text-xs text-muted-foreground">Created {mandate.created_at}</p>
+                {mandate.gocardless_id && <p className="text-xs text-muted-foreground font-mono">{mandate.gocardless_id}</p>}
+                <p className="text-xs text-muted-foreground">Created {new Date(mandate.created_at).toLocaleDateString()}</p>
               </div>
               <Button variant="ghost" size="sm" className="text-muted-foreground">
                 <ExternalLink className="w-3 h-3 mr-1" /> View
               </Button>
             </motion.div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

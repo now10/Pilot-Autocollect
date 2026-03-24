@@ -1,8 +1,16 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import type { User } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+
+interface AuthUser {
+  id: string;
+  email: string;
+  full_name: string;
+  business_id: string | null;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, businessName: string, country: string) => Promise<void>;
@@ -17,33 +25,73 @@ export const useAuth = () => {
   return ctx;
 };
 
+async function buildAuthUser(supaUser: SupabaseUser): Promise<AuthUser> {
+  // Fetch business
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('id')
+    .eq('owner_id', supaUser.id)
+    .maybeSingle();
+
+  return {
+    id: supaUser.id,
+    email: supaUser.email ?? '',
+    full_name: supaUser.user_metadata?.full_name ?? '',
+    business_id: biz?.id ?? null,
+  };
+}
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem('autocollect_user');
-    if (stored) setUser(JSON.parse(stored));
-    setIsLoading(false);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const authUser = await buildAuthUser(session.user);
+        setUser(authUser);
+      } else {
+        setUser(null);
+      }
+      setIsLoading(false);
+    });
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const authUser = await buildAuthUser(session.user);
+        setUser(authUser);
+      }
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (email: string, _password: string) => {
-    await new Promise(r => setTimeout(r, 800));
-    const mockUser: User = { id: 'u1', email, role: 'business', business_id: 'b1', full_name: 'Demo Business' };
-    setUser(mockUser);
-    localStorage.setItem('autocollect_user', JSON.stringify(mockUser));
+  const login = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
   };
 
-  const signup = async (email: string, _password: string, businessName: string, _country: string) => {
-    await new Promise(r => setTimeout(r, 800));
-    const mockUser: User = { id: 'u1', email, role: 'business', business_id: 'b1', full_name: businessName };
-    setUser(mockUser);
-    localStorage.setItem('autocollect_user', JSON.stringify(mockUser));
+  const signup = async (email: string, password: string, businessName: string, country: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: businessName } },
+    });
+    if (error) throw error;
+    if (!data.user) throw new Error('Signup failed');
+
+    // Create business record
+    await supabase.from('businesses').insert({
+      owner_id: data.user.id,
+      name: businessName,
+      country,
+    });
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('autocollect_user');
   };
 
   return (

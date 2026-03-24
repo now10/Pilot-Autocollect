@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { motion } from 'framer-motion';
 import { ArrowRight, Zap } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 const Login = () => {
   const { login } = useAuth();
@@ -20,6 +21,8 @@ const Login = () => {
     try {
       await login(email, password);
       navigate('/dashboard');
+    } catch (err: any) {
+      toast.error('Login failed', { description: err.message });
     } finally {
       setLoading(false);
     }
@@ -27,11 +30,7 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md"
-      >
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
